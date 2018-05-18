@@ -68,6 +68,11 @@ END_EXTERN_C
 #include <zlib.h>        /* for zlibVersion() */
 #endif
 
+// adding UUID support
+// HealthLytix, Jorge Guzman
+#include <uuid/uuid.h>
+#include <iostream>
+
 // we assume that the inetd super server is available on all non-Windows systems
 #ifndef _WIN32
 #define INETD_AVAILABLE
@@ -91,15 +96,21 @@ static char rcsid[] = "$dcmtk: " OFFIS_CONSOLE_APPLICATION " v" OFFIS_DCMTK_VERS
 #define CALLING_AETITLE_PLACEHOLDER "#a"
 #define CALLED_AETITLE_PLACEHOLDER "#c"
 #define CALLING_PRESENTATION_ADDRESS_PLACEHOLDER "#r"
+#define UUID_PLACEHOLDER "#u"
+#define STUDY_UID_PLACEHOLDER "#e"
+#define SERIES_UID_PLACEHOLDER "#s"
 
-static OFCondition processCommands(T_ASC_Association *assoc);
+static OFCondition processCommands(T_ASC_Association *assoc, char * uuid_string);
 static OFCondition acceptAssociation(T_ASC_Network *net, DcmAssociationConfiguration& asccfg, OFBool secureConnection);
 static OFCondition echoSCP(T_ASC_Association * assoc, T_DIMSE_Message * msg, T_ASC_PresentationContextID presID);
-static OFCondition storeSCP(T_ASC_Association * assoc, T_DIMSE_Message * msg, T_ASC_PresentationContextID presID);
+static OFCondition storeSCP(T_ASC_Association * assoc, T_DIMSE_Message * msg, T_ASC_PresentationContextID presID, char * uuid_string);
 static void executeOnReception();
 static void executeEndOfStudyEvents();
 static void executeOnEndOfStudy();
 static void renameOnEndOfStudy();
+static void executeOnStartOfAssociation(char * uuid_string);
+static void executeOnEndOfAssociation(char * uuid_string);
+static void executeOnNewSeries( char * uuid_string, const OFString &study_uid, const OFString &series_uid );
 static OFString replaceChars( const OFString &srcstr, const OFString &pattern, const OFString &substitute );
 static void executeCommand( const OFString &cmd );
 static void cleanChildren(pid_t pid, OFBool synch);
@@ -115,7 +126,8 @@ enum E_SortStudyMode
     ESM_None,
     ESM_Timestamp,
     ESM_StudyInstanceUID,
-    ESM_PatientName
+    ESM_PatientName,
+    ESM_UID
 };
 
 OFBool             opt_showPresentationContexts = OFFalse;
@@ -146,6 +158,7 @@ OFBool             opt_abortAfterStore = OFFalse;
 OFBool             opt_promiscuous = OFFalse;
 OFBool             opt_correctUIDPadding = OFFalse;
 OFBool             opt_inetd_mode = OFFalse;
+OFString           inputDir = "input";
 OFString           callingAETitle;                    // calling application entity title will be stored here
 OFString           lastCallingAETitle;
 OFString           calledAETitle;                     // called application entity title will be stored here
@@ -159,9 +172,11 @@ static const char *opt_sortStudyDirPrefix = NULL;     // default: no directory p
 OFString           lastStudyInstanceUID;
 OFString           subdirectoryPathAndName;
 OFList<OFString>   outputFileNameArray;
-static const char *opt_execOnReception = NULL;        // default: don't execute anything on reception
-static const char *opt_execOnEndOfStudy = NULL;       // default: don't execute anything on end of study
-
+static const char *opt_execOnReception = NULL;          // default: don't execute anything on reception
+static const char *opt_execOnEndOfStudy = NULL;         // default: don't execute anything on end of study
+static const char *opt_execOnEndOfAssociation = NULL;   // default: don't execute anything on end of association
+static const char *opt_execOnStartOfAssociation = NULL; // default: don't execute anything on start of association
+static const char *opt_execOnNewSeries = NULL;          // default: don't execute anything on new series detection for association
 OFString           lastStudySubdirectoryPathAndName;
 static OFBool      opt_renameOnEndOfStudy = OFFalse;  // default: don't rename any files on end of study
 static long        opt_endOfStudyTimeout = -1;        // default: no end of study timeout
@@ -354,6 +369,7 @@ int main(int argc, char *argv[])
       cmd.addOption("--sort-on-study-uid",      "-su",  1, "[p]refix: string",
                                                            "sort studies using prefix p and the Study\nInstance UID");
       cmd.addOption("--sort-on-patientname",    "-sp",     "sort studies using the Patient's Name and\na timestamp");
+      cmd.addOption("--sort-on-uid",            "-sui",     "sort studies using random uuid created for each association");
 
     cmd.addSubGroup("filename generation:");
       cmd.addOption("--default-filenames",      "-uf",     "generate filename from instance UID (default)");
@@ -371,6 +387,12 @@ int main(int argc, char *argv[])
     cmd.addOption("--eostudy-timeout",          "-tos", 1, "[t]imeout: integer",
                                                            "specifies a timeout of t seconds for\nend-of-study determination");
     cmd.addOption("--exec-sync",                "-xs",     "execute command synchronously in foreground");
+    cmd.addOption("--exec-on-eoassoc",          "-xoa", 1, "[c]ommand: string",
+                                                           "execute command c after the dicom association is completed");
+    cmd.addOption("--exec-on-sassoc",           "-xsa", 1, "[c]ommand: string",
+                                                           "execute command c at the start of a dicom association");
+    cmd.addOption("--exec-on-series",           "-xse", 1, "[c]ommand: string",
+                                                           "execute command c when a new series is detected during a dicom association");
 
   /* evaluate command line */
   prepareCmdLineArgs(argc, argv, OFFIS_CONSOLE_APPLICATION);
@@ -818,6 +840,12 @@ int main(int argc, char *argv[])
       opt_sortStudyDirPrefix = NULL;
       opt_sortStudyMode = ESM_PatientName;
     }
+    if (cmd.findOption("--sort-on-uid"))
+    {
+      opt_sortStudyDirPrefix = NULL;
+      opt_sortStudyMode = ESM_UID;
+    }
+    
     cmd.endOptionBlock();
 
     cmd.beginOptionBlock();
@@ -833,6 +861,12 @@ int main(int argc, char *argv[])
 
     if (cmd.findOption("--exec-on-reception")) app.checkValue(cmd.getValue(opt_execOnReception));
 
+    // added option for exec on end of association
+    // jorge guzman
+    if (cmd.findOption("--exec-on-eoassoc")) app.checkValue(cmd.getValue(opt_execOnEndOfAssociation));
+    if (cmd.findOption("--exec-on-sassoc")) app.checkValue(cmd.getValue(opt_execOnStartOfAssociation));
+    if (cmd.findOption("--exec-on-series")) app.checkValue(cmd.getValue(opt_execOnNewSeries));
+    
     if (cmd.findOption("--exec-on-eostudy"))
     {
       app.checkConflict("--exec-on-eostudy", "--fork", opt_forkMode);
@@ -1002,6 +1036,11 @@ static OFCondition acceptAssociation(T_ASC_Network *net, DcmAssociationConfigura
 #ifdef PRIVATE_STORESCP_VARIABLES
   PRIVATE_STORESCP_VARIABLES
 #endif
+
+  // typedef unsigned char uuid_t[16]
+  // for association id;
+  uuid_t uuid;
+  char *uuid_string = new char[100];
 
   const char* knownAbstractSyntaxes[] =
   {
@@ -1480,13 +1519,24 @@ static OFCondition acceptAssociation(T_ASC_Network *net, DcmAssociationConfigura
   // store calling presentation address (i.e. remote hostname)
   callingPresentationAddress = OFSTRING_GUARD(assoc->params->DULparams.callingPresentationAddress);
 
+  // generate association id 
+  // jguzman
+  uuid_generate_time_safe(uuid);
+  uuid_unparse(uuid, uuid_string);
+  if( opt_execOnStartOfAssociation != NULL )
+    executeOnStartOfAssociation(uuid_string);
+
+  // std::cout << uuid_string << std::endl;
+
   /* now do the real work, i.e. receive DIMSE commands over the network connection */
   /* which was established and handle these commands correspondingly. In case of */
   /* storescp only C-ECHO-RQ and C-STORE-RQ commands can be processed. */
-  cond = processCommands(assoc);
+  cond = processCommands(assoc, uuid_string);
 
   if (cond == DUL_PEERREQUESTEDRELEASE)
   {
+    if( opt_execOnEndOfAssociation != NULL )
+      executeOnEndOfAssociation(uuid_string);
     OFLOG_INFO(storescpLogger, "Association Release");
     cond = ASC_acknowledgeRelease(assoc);
   }
@@ -1523,7 +1573,7 @@ cleanup:
 
 
 static OFCondition
-processCommands(T_ASC_Association * assoc)
+processCommands(T_ASC_Association * assoc, char * uuid_string)
     /*
      * This function receives DIMSE commands over the network connection
      * and handles these commands correspondingly. Note that in case of
@@ -1603,7 +1653,7 @@ processCommands(T_ASC_Association * assoc)
           break;
         case DIMSE_C_STORE_RQ:
           // process C-STORE-Request
-          cond = storeSCP(assoc, &msg, presID);
+          cond = storeSCP(assoc, &msg, presID, uuid_string);
           break;
         default:
           OFString tempStr;
@@ -1674,6 +1724,7 @@ struct StoreCallbackData
   char* imageFileName;
   DcmFileFormat* dcmff;
   T_ASC_Association* assoc;
+  char* uuid_string;
 };
 
 
@@ -1783,6 +1834,20 @@ storeSCPCallback(
           return;
         }
 
+        // if --sort-on-uid is active, we need to extract the
+        // series_uid for sub sub directories uuid/series-uid/image.dcm
+        OFString currentSeriesUID;
+        if (opt_sortStudyMode == ESM_UID)
+        {
+          if ((*imageDataSet)->findAndGetOFString(DCM_SeriesInstanceUID, currentSeriesUID).bad() || currentSeriesUID.empty())
+          {
+            // default if patient name is missing or empty
+            currentSeriesUID = "UNKNOWNSERIESUID";
+            OFLOG_WARN(storescpLogger, "element SeriesInstanceUID " << DCM_SeriesInstanceUID << " absent or empty in data set, using '"
+                 << currentSeriesUID << "' instead");
+          }
+        }
+
         // if --sort-on-patientname is active, we need to extract the
         // patient's name (format: last_name^first_name)
         OFString currentPatientName;
@@ -1864,6 +1929,10 @@ storeSCPCallback(
               subdirectoryName += '_';
               subdirectoryName += timestamp;
               break;
+            case ESM_UID:
+              // pattern: "[UUID]"
+              subdirectoryName = cbdata->uuid_string;
+              break;
             case ESM_None:
               break;
           }
@@ -1873,9 +1942,7 @@ storeSCPCallback(
 
           // check if the subdirectory already exists
           // if it already exists dump a warning
-          if( OFStandard::dirExists(subdirectoryPathAndName) )
-            OFLOG_WARN(storescpLogger, "subdirectory for study already exists: " << subdirectoryPathAndName);
-          else
+          if( !OFStandard::dirExists(subdirectoryPathAndName) )
           {
             // if it does not exist create it
             OFLOG_INFO(storescpLogger, "creating new subdirectory for study: " << subdirectoryPathAndName);
@@ -1894,6 +1961,91 @@ storeSCPCallback(
             // if no reset would be done, files of a new study (->new directory) would start with a counter in filename
             if (opt_timeNames)
               timeNameCounter = -1;
+          }
+
+          if (opt_sortStudyMode == ESM_UID)
+          {
+            
+            subdirectoryPathAndName += '/';
+            subdirectoryPathAndName += inputDir;
+
+            // check if the subdirectory already exists
+            // if it already exists dump a warning
+            if( !OFStandard::dirExists(subdirectoryPathAndName) )
+            {
+              // if it does not exist create it
+              OFLOG_INFO(storescpLogger, "creating new subdirectory for study: " << subdirectoryPathAndName);
+#ifdef HAVE_WINDOWS_H
+              if( _mkdir( subdirectoryPathAndName.c_str() ) == -1 )
+#else
+              if( mkdir( subdirectoryPathAndName.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ) == -1 )
+#endif
+              {
+                OFLOG_ERROR(storescpLogger, "could not create subdirectory for study: " << subdirectoryPathAndName);
+                rsp->DimseStatus = STATUS_STORE_Error_CannotUnderstand;
+                return;
+              }
+            }
+            
+            subdirectoryPathAndName += '/';
+            subdirectoryPathAndName += currentSeriesUID;
+
+            // check if the subdirectory already exists
+            // if it already exists dump a warning
+            if( !OFStandard::dirExists(subdirectoryPathAndName) )
+            {
+              // if it does not exist create it
+              OFLOG_INFO(storescpLogger, "creating new subdirectory for study: " << subdirectoryPathAndName);
+#ifdef HAVE_WINDOWS_H
+              if( _mkdir( subdirectoryPathAndName.c_str() ) == -1 )
+#else
+              if( mkdir( subdirectoryPathAndName.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ) == -1 )
+#endif
+              {
+                OFLOG_ERROR(storescpLogger, "could not create subdirectory for study: " << subdirectoryPathAndName);
+                rsp->DimseStatus = STATUS_STORE_Error_CannotUnderstand;
+                return;
+              }
+
+              // send event of new series
+              executeOnNewSeries(cbdata->uuid_string, currentStudyInstanceUID, currentSeriesUID);
+            }
+          }
+        } else {
+          if (opt_sortStudyMode == ESM_UID) {
+            OFString previousSeriesUID;
+            OFStandard::getFilenameFromPath(previousSeriesUID, subdirectoryPathAndName);
+
+            if ( previousSeriesUID != currentSeriesUID ) 
+            {
+              OFString previousBaseDir;
+              OFStandard::getDirNameFromPath(previousBaseDir, subdirectoryPathAndName);
+
+              subdirectoryPathAndName = previousBaseDir;
+              subdirectoryPathAndName += '/';
+              subdirectoryPathAndName += currentSeriesUID;
+
+              // check if the subdirectory already exists
+              // if it already exists dump a warning
+              if( !OFStandard::dirExists(subdirectoryPathAndName) )
+              {
+                // if it does not exist create it
+                OFLOG_INFO(storescpLogger, "creating new subdirectory for study: " << subdirectoryPathAndName);
+  #ifdef HAVE_WINDOWS_H
+                if( _mkdir( subdirectoryPathAndName.c_str() ) == -1 )
+  #else
+                if( mkdir( subdirectoryPathAndName.c_str(), S_IRWXU | S_IRWXG | S_IRWXO ) == -1 )
+  #endif
+                {
+                  OFLOG_ERROR(storescpLogger, "could not create subdirectory for study: " << subdirectoryPathAndName);
+                  rsp->DimseStatus = STATUS_STORE_Error_CannotUnderstand;
+                  return;
+                }
+
+                // send event of new series
+                executeOnNewSeries(cbdata->uuid_string, currentStudyInstanceUID, currentSeriesUID);
+              }
+            }
           }
         }
 
@@ -1972,7 +2124,8 @@ storeSCPCallback(
 static OFCondition storeSCP(
   T_ASC_Association *assoc,
   T_DIMSE_Message *msg,
-  T_ASC_PresentationContextID presID)
+  T_ASC_PresentationContextID presID,
+  char * uuid_string)
     /*
      * This function processes a DIMSE C-STORE-RQ command that was
      * received over the network connection.
@@ -2085,6 +2238,7 @@ static OFCondition storeSCP(
   callbackData.imageFileName = imageFileName;
   DcmFileFormat dcmff;
   callbackData.dcmff = &dcmff;
+  callbackData.uuid_string = uuid_string;
 
   // store SourceApplicationEntityTitle in metaheader
   if (assoc && assoc->params)
@@ -2222,6 +2376,110 @@ static void executeOnReception()
   executeCommand( cmd );
 }
 
+static void executeOnStartOfAssociation(char * uuid_string)
+    /*
+     * This function deals with the execution of the command line which was passed
+     * to option --exec-on-eoassoc of the storescp. This command line is captured
+     * in opt_execOnEndOfAssociation. Note that the command line can contain the placeholders
+     * PATH_PLACEHOLDER and FILENAME_PLACEHOLDER which need to be substituted before the command line is actually
+     * executed. PATH_PLACEHOLDER will be substituted by the path to the output directory into which
+     * the last file was written; FILENAME_PLACEHOLDER will be substituted by the filename of the last
+     * file which was written.
+     *
+     * Parameters:
+     *   none.
+     */
+{
+
+  OFString cmd = opt_execOnStartOfAssociation;
+
+  // perform substitution for placeholder #u
+  cmd = replaceChars( cmd, OFString(UUID_PLACEHOLDER), OFString(uuid_string) );
+
+  // perform substitution for placeholder #a
+  cmd = replaceChars( cmd, OFString(CALLING_AETITLE_PLACEHOLDER), callingAETitle );
+
+  // perform substitution for placeholder #c
+  cmd = replaceChars( cmd, OFString(CALLED_AETITLE_PLACEHOLDER), calledAETitle );
+
+  // perform substitution for placeholder #r
+  cmd = replaceChars( cmd, OFString(CALLING_PRESENTATION_ADDRESS_PLACEHOLDER), callingPresentationAddress );
+
+  // Execute command in a new process
+  executeCommand( cmd );
+}
+
+static void executeOnNewSeries( char * uuid_string, const OFString &study_uid, const OFString &series_uid )
+    /*
+     * This function deals with the execution of the command line which was passed
+     * to option --exec-on-series of the storescp. This command line is captured
+     * in opt_execOnNewSeries. Note that the command line can contain the placeholders
+     * PATH_PLACEHOLDER and FILENAME_PLACEHOLDER which need to be substituted before the command line is actually
+     * executed. PATH_PLACEHOLDER will be substituted by the path to the output directory into which
+     * the last file was written; FILENAME_PLACEHOLDER will be substituted by the filename of the last
+     * file which was written.
+     *
+     * Parameters:
+     *   none.
+     */
+{
+
+  OFString cmd = opt_execOnNewSeries;
+
+  // perform substitution for placeholder #u
+  cmd = replaceChars( cmd, OFString(UUID_PLACEHOLDER), OFString(uuid_string) );
+
+  // perform substitution for placeholder #a
+  cmd = replaceChars( cmd, OFString(CALLING_AETITLE_PLACEHOLDER), callingAETitle );
+
+  // perform substitution for placeholder #c
+  cmd = replaceChars( cmd, OFString(CALLED_AETITLE_PLACEHOLDER), calledAETitle );
+
+  // perform substitution for placeholder #r
+  cmd = replaceChars( cmd, OFString(CALLING_PRESENTATION_ADDRESS_PLACEHOLDER), callingPresentationAddress );
+
+  // perform substitution for placeholder #e
+  cmd = replaceChars( cmd, OFString(STUDY_UID_PLACEHOLDER), study_uid );
+
+  // perform substitution for placeholder #s
+  cmd = replaceChars( cmd, OFString(SERIES_UID_PLACEHOLDER), series_uid );  
+
+  // Execute command in a new process
+  executeCommand( cmd );
+}
+
+static void executeOnEndOfAssociation(char * uuid_string)
+    /*
+     * This function deals with the execution of the command line which was passed
+     * to option --exec-on-eoassoc of the storescp. This command line is captured
+     * in opt_execOnEndOfAssociation. Note that the command line can contain the placeholders
+     * PATH_PLACEHOLDER and FILENAME_PLACEHOLDER which need to be substituted before the command line is actually
+     * executed. PATH_PLACEHOLDER will be substituted by the path to the output directory into which
+     * the last file was written; FILENAME_PLACEHOLDER will be substituted by the filename of the last
+     * file which was written.
+     *
+     * Parameters:
+     *   none.
+     */
+{
+
+  OFString cmd = opt_execOnEndOfAssociation;
+
+  // perform substitution for placeholder #u
+  cmd = replaceChars( cmd, OFString(UUID_PLACEHOLDER), OFString(uuid_string) );
+
+  // perform substitution for placeholder #a
+  cmd = replaceChars( cmd, OFString(CALLING_AETITLE_PLACEHOLDER), callingAETitle );
+
+  // perform substitution for placeholder #c
+  cmd = replaceChars( cmd, OFString(CALLED_AETITLE_PLACEHOLDER), calledAETitle );
+
+  // perform substitution for placeholder #r
+  cmd = replaceChars( cmd, OFString(CALLING_PRESENTATION_ADDRESS_PLACEHOLDER), callingPresentationAddress );
+
+  // Execute command in a new process
+  executeCommand( cmd );
+}
 
 static void renameOnEndOfStudy()
     /*

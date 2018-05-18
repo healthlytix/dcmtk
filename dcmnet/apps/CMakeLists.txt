@@ -38,3 +38,7 @@ ENDFOREACH(PROGRAM)
 
 # "dcmsend" always needs compression support
 DCMTK_TARGET_LINK_MODULES(dcmsend dcmjpls dcmjpeg dcmimage)
+
+# added by HealthLytix for UUID support
+# LINK_DIRECTORIES(/usr/lib)
+TARGET_LINK_LIBRARIES(storescp "/usr/lib/libuuid.so")
