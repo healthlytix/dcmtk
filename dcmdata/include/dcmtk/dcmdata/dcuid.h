@@ -203,10 +203,10 @@ DCMTK_DCMDATA_EXPORT unsigned long dcmGuessModalityBytes(const char *sopClassUID
  */
 
 /// implementation version name for this version of the toolkit
-#define OFFIS_DTK_IMPLEMENTATION_VERSION_NAME   "OFFIS_DCMTK_" PACKAGE_VERSION_NUMBER_TO_STRING(PACKAGE_VERSION_NUMBER)
+#define OFFIS_DTK_IMPLEMENTATION_VERSION_NAME   "HLX_EDGE_GW_" PACKAGE_VERSION_NUMBER_TO_STRING(PACKAGE_VERSION_NUMBER)
 
 /// implementation version name for this version of the toolkit, used for files received in "bit preserving" mode
-#define OFFIS_DTK_IMPLEMENTATION_VERSION_NAME2  "OFFIS_DCMBP_" PACKAGE_VERSION_NUMBER_TO_STRING(PACKAGE_VERSION_NUMBER)
+#define OFFIS_DTK_IMPLEMENTATION_VERSION_NAME2  "HLX_EDGE_GWBK_" PACKAGE_VERSION_NUMBER_TO_STRING(PACKAGE_VERSION_NUMBER)
 
 /// release date of current toolkit release
 #ifdef DCMTK_BUILD_DATE
@@ -215,8 +215,8 @@ DCMTK_DCMDATA_EXPORT unsigned long dcmGuessModalityBytes(const char *sopClassUID
 #define OFFIS_DCMTK_RELEASEDATE                 PACKAGE_DATE
 #endif
 
-/// UID root for DCMTK, registered for OFFIS with DIN in Germany
-#define OFFIS_UID_ROOT                          "1.2.276.0.7230010.3"
+/// UID root for HealthLytix 
+#define OFFIS_UID_ROOT                          "1.2.826.0.1.3680043.9.7434.0"
 
 /// DCMTK version number for this release
 #define OFFIS_DCMTK_VERSION_NUMBER              PACKAGE_VERSION_NUMBER
