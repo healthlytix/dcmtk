@@ -1,6 +1,6 @@
 /*
  *
- *  Copyright (C) 1994-2017, OFFIS e.V.
+ *  Copyright (C) 1994-2018, OFFIS e.V.
  *  All rights reserved.  See COPYRIGHT file for details.
  *
  *  This software and supporting documentation were developed by
@@ -165,7 +165,8 @@ typedef enum
     /// unsupported stream compression
   , ESC_unsupported = 1
 #ifdef WITH_ZLIB
-    /// zlib stream compression
+    /// zlib stream compression.
+    /// This enum value only available if DCMTK is compiled with ZLIB support enabled.
   , ESC_zlib = 2
 #endif
 } E_StreamCompression;
@@ -287,6 +288,15 @@ public:
         return streamCompression;
     }
 
+    /** check whether transfer syntax uses (0028,7FE0) Pixel Data Provider URL
+     *  to reference pixel data
+     *  @return true if transfer syntax uses URL reference to pixel data
+     */
+    inline OFBool isReferenced() const
+    {
+        return referenced;
+    }
+
     /** return the number of bytes needed to describe the tag, length, VR
      *  and any reserved fields for this transfer syntax when encoding the
      *  specified VR.
@@ -331,6 +341,10 @@ private:
 
     /// transfer syntax stream compression type
     E_StreamCompression streamCompression;
+
+    /// flag indicating whether this transfer syntax uses a pixel data URL reference
+    OFBool              referenced;
+
 };
 
 /** global constant describing the byte order on the machine the application

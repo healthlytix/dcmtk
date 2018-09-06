@@ -1,6 +1,6 @@
 /*
  *
- *  Copyright (C) 2000-2017, OFFIS e.V.
+ *  Copyright (C) 2000-2018, OFFIS e.V.
  *  All rights reserved.  See COPYRIGHT file for details.
  *
  *  This software and supporting documentation were developed by
@@ -100,7 +100,7 @@ static OFBool addTag(const char *c, DcmAttributeTag& tagList)
     {
       if (EC_Normal == tagList.putTagVal(dicent->getKey(), tagList.getVM())) result = OFTrue;
     }
-    dcmDataDict.unlock();
+    dcmDataDict.rdunlock();
   } else {
     if (EC_Normal == tagList.putTagVal(DcmTagKey(group,elem), tagList.getVM())) result = OFTrue;
   }
@@ -158,11 +158,11 @@ static int readNextToken(const char *c, int& pos, DcmTagKey& key, Uint32& idx)
   if (dicent)
   {
     key = dicent->getKey();
-    dcmDataDict.unlock();
+    dcmDataDict.rdunlock();
     pos = lpos;
     return 1; // tag key;
   }
-  dcmDataDict.unlock();
+  dcmDataDict.rdunlock();
   OFLOG_ERROR(dcmsignLogger, "attribute name '" << aString.c_str() << "' unknown.");
   return 0; // parse error
 }
@@ -1141,8 +1141,7 @@ int main(int argc, char *argv[])
 
     if (opt_oxfer == EXS_Unknown) opt_oxfer = dataset->getOriginalXfer();
     DcmXfer opt_oxferSyn(opt_oxfer);
-    dataset->chooseRepresentation(opt_oxfer, NULL);
-    if (! dataset->canWriteXfer(opt_oxfer))
+    if (dataset->chooseRepresentation(opt_oxfer, NULL).bad() || (! dataset->canWriteXfer(opt_oxfer)))
     {
       OFLOG_FATAL(dcmsignLogger, "No conversion to transfer syntax " << opt_oxferSyn.getXferName() << " possible!");
       return 1;

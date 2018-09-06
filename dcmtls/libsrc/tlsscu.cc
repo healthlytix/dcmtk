@@ -20,6 +20,7 @@
  */
 
 #include "dcmtk/config/osconfig.h"  /* make sure OS specific configuration is included first */
+#include "dcmtk/dcmtls/tlsdefin.h"  /* for DCMTK_DCMTLS_EXPORT */
 
 #ifdef WITH_OPENSSL
 #include "dcmtk/dcmtls/tlsscu.h"
@@ -338,5 +339,14 @@ OFString DcmTLSSCU::getDHParam() const
   return m_dhparam;
 }
 
+#else
+
+/* make sure that the object file is not completely empty if compiled
+ * without OpenSSL because some linkers might fail otherwise.
+ */
+DCMTK_DCMTLS_EXPORT void tlsscu_dummy_function()
+{
+  return;
+}
 
 #endif // WITH_OPENSSL

@@ -1,6 +1,6 @@
 /*
  *
- *  Copyright (C) 1994-2017, OFFIS e.V.
+ *  Copyright (C) 1994-2018, OFFIS e.V.
  *  All rights reserved.  See COPYRIGHT file for details.
  *
  *  This software and supporting documentation were developed by
@@ -96,7 +96,7 @@ static DcmTagKey parseTagKey(const char *tagName)
         } else {
             tagKey = dicent->getKey();
         }
-        dcmDataDict.unlock();
+        dcmDataDict.rdunlock();
         return tagKey;
     } else     /* tag name has format "gggg,eeee" */
     {
@@ -120,20 +120,23 @@ static OFBool addPrintTagName(const char *tagName)
         const DcmDictEntry *dicent = globalDataDict.findEntry(tagName);
         if (dicent == NULL) {
             OFLOG_WARN(dcmdumpLogger, "unrecognized tag name: '" << tagName << "'");
-            dcmDataDict.unlock();
+            dcmDataDict.rdunlock();
             return OFFalse;
         } else {
             /* note for later */
             printTagKeys[printTagCount] = new DcmTagKey(dicent->getKey());
         }
-        dcmDataDict.unlock();
+        dcmDataDict.rdunlock();
     } else {
         /* tag name has format xxxx,xxxx */
         /* do not lookup in dictionary, tag could be private */
         printTagKeys[printTagCount] = NULL;
     }
 
-    printTagNames[printTagCount] = strcpy(OFstatic_cast(char*, malloc(strlen(tagName)+1)), tagName);
+    size_t buflen = strlen(tagName)+1;
+    char *buf = OFstatic_cast(char*, malloc(buflen));
+    OFStandard::strlcpy(buf, tagName, buflen);
+    printTagNames[printTagCount] = buf;
     printTagCount++;
     return OFTrue;
 }

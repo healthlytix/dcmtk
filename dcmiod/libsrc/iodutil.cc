@@ -556,7 +556,7 @@ OFBool DcmIODUtil::isSequenceTag(const DcmTagKey& key,
   {
     vr = dictRef->getVR();
   }
-  dcmDataDict.unlock();
+  dcmDataDict.rdunlock();
   if (vr.getEVR() == EVR_SQ)
     return OFTrue;
   return OFFalse;
@@ -605,13 +605,13 @@ OFString DcmIODUtil::createUID(const Uint8 level)
 }
 
 
-Uint16 DcmIODUtil::limitMaxFrames(const size_t numFramesPresent,
+Uint32 DcmIODUtil::limitMaxFrames(const size_t numFramesPresent,
                                   const OFString& warning)
 {
-  if (numFramesPresent > 65535)
+  if (numFramesPresent > 2147483647)
   {
     DCMIOD_WARN(warning);
-    return 65535;
+    return 2147483647;
   }
   return OFstatic_cast(Uint16, numFramesPresent);
 }
