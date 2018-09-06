@@ -21,8 +21,8 @@
 # DICONDE (Digital Imaging and Communication in Nondestructive Evaluation) and
 # DICOS (Digital Imaging and Communications in Security) standard.
 #
-# Generated automatically from DICOM PS 3.6-2018b and PS 3.7-2018b
-# File created on 2018-04-12 18:49:36 by J. Riesmeier on thinkpad.
+# Generated automatically from DICOM PS 3.6-2018c and PS 3.7-2018c
+# File created on 2018-07-16 12:38:18 by J. Riesmeier on thinkpad.
 #
 # In addition, the data dictionary entries from the following final text
 # supplements and correction items (CP) have been incorporated:
@@ -3082,6 +3082,7 @@
 (0400,0563)	LO	ModifyingSystem	1	DICOM
 (0400,0564)	LO	SourceOfPreviousValues	1	DICOM
 (0400,0565)	CS	ReasonForTheAttributeModification	1	DICOM
+(0400,0600)	CS	InstanceOriginStatus	1	DICOM
 (2000,0010)	IS	NumberOfCopies	1	DICOM
 (2000,001E)	SQ	PrinterConfigurationSequence	1	DICOM
 (2000,0020)	CS	PrintPriority	1	DICOM
@@ -3421,6 +3422,7 @@
 (300A,0091)	DS	AlternateBeamDose	1	DICOM
 (300A,0092)	CS	AlternateBeamDoseType	1	DICOM
 (300A,0093)	CS	DepthValueAveragingFlag	1	DICOM
+(300A,0094)	DS	BeamDosePointSourceToExternalContourDistance	1	DICOM
 (300A,00A0)	IS	NumberOfBrachyApplicationSetups	1	DICOM
 (300A,00A2)	DS	BrachyApplicationSetupDoseSpecificationPoint	3	DICOM
 (300A,00A4)	DS	BrachyApplicationSetupDose	1	DICOM

@@ -422,6 +422,9 @@
 /* Define if your system has a prototype for finite in math.h */
 #cmakedefine HAVE_PROTOTYPE_FINITE @HAVE_PROTOTYPE_FINITE@
 
+/* Define to 1 if your has a prototype for `TryAcquireSRWLockShared' in windows.h (Win32 only). */
+#cmakedefine HAVE_PROTOTYPE_TRYACQUIRESRWLOCKSHARED @HAVE_PROTOTYPE_TRYACQUIRESRWLOCKSHARED@
+
 /* Define if your system has a prototype for std::finite in cmath */
 #cmakedefine HAVE_PROTOTYPE_STD__FINITE @HAVE_PROTOTYPE_STD__FINITE@
 
@@ -1072,6 +1075,9 @@ typedef unsigned long ulong;
 
 /* Define if the compiler supports operator delete (std::nothrow) */
 #cmakedefine HAVE_NOTHROW_DELETE @HAVE_NOTHROW_DELETE@
+
+/* Define if the compiler supports static_assert */
+#cmakedefine HAVE_STATIC_ASSERT @HAVE_STATIC_ASSERT@
 
 /* Define if your system has a prototype for std::vfprintf in stdarg.h */
 #cmakedefine HAVE_PROTOTYPE_STD__VFPRINTF @HAVE_PROTOTYPE_STD__VFPRINTF@
