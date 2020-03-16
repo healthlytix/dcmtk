@@ -110,6 +110,7 @@ static void executeOnEndOfStudy();
 static void renameOnEndOfStudy();
 static void executeOnStartOfAssociation(char * uuid_string);
 static void executeOnEndOfAssociation(char * uuid_string);
+static void executeOnAbortOfAssociation(char * uuid_string);
 static void executeOnNewSeries( char * uuid_string, const OFString &study_uid, const OFString &series_uid );
 static OFString replaceChars( const OFString &srcstr, const OFString &pattern, const OFString &substitute );
 static void executeCommand( const OFString &cmd );
@@ -176,6 +177,7 @@ static const char *opt_execOnReception = NULL;          // default: don't execut
 static const char *opt_execOnEndOfStudy = NULL;         // default: don't execute anything on end of study
 static const char *opt_execOnEndOfAssociation = NULL;   // default: don't execute anything on end of association
 static const char *opt_execOnStartOfAssociation = NULL; // default: don't execute anything on start of association
+static const char *opt_execOnAbortOfAssociation = NULL;   // default: don't execute anything on abort of association
 static const char *opt_execOnNewSeries = NULL;          // default: don't execute anything on new series detection for association
 OFString           lastStudySubdirectoryPathAndName;
 static OFBool      opt_renameOnEndOfStudy = OFFalse;  // default: don't rename any files on end of study
@@ -393,6 +395,8 @@ int main(int argc, char *argv[])
                                                            "execute command c at the start of a dicom association");
     cmd.addOption("--exec-on-series",           "-xse", 1, "[c]ommand: string",
                                                            "execute command c when a new series is detected during a dicom association");
+    cmd.addOption("--exec-on-cassoc",          "-xca", 1, "[c]ommand: string",
+                                                           "execute command c after the dicom association is canceled (aborted)");
 
   /* evaluate command line */
   prepareCmdLineArgs(argc, argv, OFFIS_CONSOLE_APPLICATION);
@@ -866,6 +870,7 @@ int main(int argc, char *argv[])
     if (cmd.findOption("--exec-on-eoassoc")) app.checkValue(cmd.getValue(opt_execOnEndOfAssociation));
     if (cmd.findOption("--exec-on-sassoc")) app.checkValue(cmd.getValue(opt_execOnStartOfAssociation));
     if (cmd.findOption("--exec-on-series")) app.checkValue(cmd.getValue(opt_execOnNewSeries));
+    if (cmd.findOption("--exec-on-cassoc")) app.checkValue(cmd.getValue(opt_execOnAbortOfAssociation));
     
     if (cmd.findOption("--exec-on-eostudy"))
     {
@@ -1542,6 +1547,10 @@ static OFCondition acceptAssociation(T_ASC_Network *net, DcmAssociationConfigura
   }
   else if (cond == DUL_PEERABORTEDASSOCIATION)
   {
+    if (opt_execOnAbortOfAssociation != NULL )
+    {
+      executeOnAbortOfAssociation(uuid_string);
+    }
     OFLOG_INFO(storescpLogger, "Association Aborted");
   }
   else
@@ -2464,6 +2473,35 @@ static void executeOnEndOfAssociation(char * uuid_string)
 {
 
   OFString cmd = opt_execOnEndOfAssociation;
+
+  // perform substitution for placeholder #u
+  cmd = replaceChars( cmd, OFString(UUID_PLACEHOLDER), OFString(uuid_string) );
+
+  // perform substitution for placeholder #a
+  cmd = replaceChars( cmd, OFString(CALLING_AETITLE_PLACEHOLDER), callingAETitle );
+
+  // perform substitution for placeholder #c
+  cmd = replaceChars( cmd, OFString(CALLED_AETITLE_PLACEHOLDER), calledAETitle );
+
+  // perform substitution for placeholder #r
+  cmd = replaceChars( cmd, OFString(CALLING_PRESENTATION_ADDRESS_PLACEHOLDER), callingPresentationAddress );
+
+  // Execute command in a new process
+  executeCommand( cmd );
+}
+
+static void executeOnAbortOfAssociation(char * uuid_string)
+    /*
+     * This function deals with the execution of the command line which was passed
+     * to option --exec-on-cassoc of the storescp. This command line is captured
+     * in opt_execOnAbortOfAssociation.
+     *
+     * Parameters:
+     *   none.
+     */
+{
+
+  OFString cmd = opt_execOnAbortOfAssociation;
 
   // perform substitution for placeholder #u
   cmd = replaceChars( cmd, OFString(UUID_PLACEHOLDER), OFString(uuid_string) );
